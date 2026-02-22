@@ -1,0 +1,553 @@
+import { Client, GatewayIntentBits, Events, Collection, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ApplicationCommandOptionType, ChannelType, AttachmentBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } from 'discord.js';
+import { storage } from './storage';
+import { createCanvas, loadImage, registerFont } from 'canvas';
+import path from 'path';
+
+const invitesCache = new Map<string, Collection<string, number>>();
+
+async function createWelcomeImage(username: string, avatarUrl: string) {
+  const canvas = createCanvas(800, 400);
+  const ctx = canvas.getContext('2d');
+
+  // Load background
+  try {
+    const background = await loadImage(path.join(process.cwd(), 'client/public/images/welcome-bg.png'));
+    ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
+  } catch (err) {
+    console.error("Failed to load background image:", err);
+    // Fill with a color if background fails
+    ctx.fillStyle = '#2c2f33';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // Draw Avatar in Circle
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(400, 203, 100, 0, Math.PI * 2, true);
+  ctx.closePath();
+  ctx.clip();
+
+  try {
+    const avatar = await loadImage(avatarUrl);
+    ctx.drawImage(avatar, 300, 103, 200, 200);
+  } catch (err) {
+    console.error("Failed to load avatar:", err);
+  }
+  ctx.restore();
+
+  // Add border to avatar circle
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(400, 203, 100, 0, Math.PI * 2, true);
+  ctx.stroke();
+
+  return canvas.toBuffer();
+}
+
+export async function startBot() {
+  if (!process.env.DISCORD_TOKEN) {
+    console.log("No DISCORD_TOKEN provided. Bot will not start.");
+    return;
+  }
+
+  const client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
+      GatewayIntentBits.GuildInvites,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildEmojisAndStickers
+    ]
+  });
+
+  client.once(Events.ClientReady, async (c : any) => {
+    console.log(`Ready! Logged in as ${c.user.tag}`);
+
+    // Set default welcome channel if not set
+    const defaultWelcomeChannelId = "1333217333300170763";
+    for (const guild of c.guilds.cache.values()) {
+      const config = await storage.getGuildConfig(guild.id);
+      if (!config || !config.welcomeChannelId) {
+        await storage.setGuildConfig({
+          guildId: guild.id,
+          welcomeChannelId: defaultWelcomeChannelId,
+          language: 'ar'
+        });
+        console.log(`Set default welcome channel ${defaultWelcomeChannelId} for guild ${guild.name}`);
+      }
+    }
+
+    // Register slash commands
+    const data = [
+      {
+        name: 'set-welcome',
+        description: 'Set the welcome channel',
+        options: [
+          {
+            name: 'channel',
+            type: ApplicationCommandOptionType.Channel,
+            description: 'The channel where welcome messages will be sent',
+            required: true,
+            channel_types: [ChannelType.GuildText]
+          },
+        ],
+      },
+      {
+        name: 'set-language',
+        description: 'Set the welcome language',
+        options: [
+          {
+            name: 'lang',
+            type: ApplicationCommandOptionType.String,
+            description: 'The desired language (ar / en)',
+            required: true,
+            choices: [
+              { name: 'Arabic (العربية)', value: 'ar' },
+              { name: 'English', value: 'en' }
+            ]
+          },
+        ],
+      },
+      {
+        name: 'set-autorole',
+        description: 'Set the automatic join role',
+        options: [
+          {
+            name: 'role',
+            type: ApplicationCommandOptionType.Role,
+            description: 'The role to be given to new members',
+            required: true,
+          },
+        ],
+      },
+      {
+        name: 'send-panel',
+        description: 'Send the information panel (Embed + Dropdown)',
+        options: [
+          {
+            name: 'channel',
+            type: ApplicationCommandOptionType.Channel,
+            description: 'The channel where the panel will be sent',
+            required: true,
+            channel_types: [ChannelType.GuildText]
+          },
+        ],
+      },
+    ];
+
+    await client.application?.commands.set(data);
+
+    for (const guild of c.guilds.cache.values()) {
+      try {
+        const invites = await guild.invites.fetch();
+        const codeUses = new Collection<string, number>();
+        invites.forEach((inv : any) => codeUses.set(inv.code, inv.uses || 0));
+        
+        // Add vanity uses to the collection as a custom property
+        if (guild.vanityURLCode) {
+          try {
+            const vanityData = await guild.fetchVanityData();
+            (codeUses as any).vanityUses = vanityData.uses;
+          } catch (e) {}
+        }
+
+        invitesCache.set(guild.id, codeUses);
+        console.log(`Cached ${invites.size} invites for guild ${guild.name}`);
+      } catch (err) {
+        console.error(`Failed to cache invites for ${guild.name}:`, err);
+      }
+    }
+  });
+
+  client.on(Events.InteractionCreate, async (interaction : any) => {
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === 'set-welcome') {
+        if (!interaction.memberPermissions?.has("Administrator")) {
+          return interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
+        }
+
+        const channel = interaction.options.getChannel('channel');
+        if (!channel || channel.type !== ChannelType.GuildText) {
+          return interaction.reply({ content: "Please select a text channel.", ephemeral: true });
+        }
+
+        await storage.setGuildConfig({
+          guildId: interaction.guildId!,
+          welcomeChannelId: channel.id
+        });
+
+        await interaction.reply({ content: `Welcome channel set successfully to: ${channel}`, ephemeral: true });
+      }
+
+      if (interaction.commandName === 'set-language') {
+        if (!interaction.memberPermissions?.has("Administrator")) {
+          return interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
+        }
+
+        const lang = interaction.options.getString('lang') || 'ar';
+        await storage.setGuildConfig({
+          guildId: interaction.guildId!,
+          language: lang
+        });
+
+        const msg = lang === 'ar' ? 'Welcome language has been set to Arabic.' : 'Welcome language has been set to English.';
+        await interaction.reply({ content: msg, ephemeral: true });
+      }
+
+      if (interaction.commandName === 'set-autorole') {
+        if (!interaction.memberPermissions?.has("Administrator")) {
+          return interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
+        }
+
+        const role = interaction.options.getRole('role');
+        if (!role) {
+          return interaction.reply({ content: "Please select a valid role.", ephemeral: true });
+        }
+
+        await storage.setGuildConfig({
+          guildId: interaction.guildId!,
+          autoRoleId: role.id
+        });
+
+        await interaction.reply({ content: `Automatic join role set successfully to: ${role.name}`, ephemeral: true });
+      }
+
+      if (interaction.commandName === 'send-panel') {
+        if (!interaction.memberPermissions?.has("Administrator")) {
+          return interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
+        }
+
+        const channel = interaction.options.getChannel('channel');
+        if (!channel || channel.type !== ChannelType.GuildText) {
+          return interaction.reply({ content: "Please select a valid text channel.", ephemeral: true });
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle('Welcome & Information System - Onyx Royal')
+          .setDescription(
+            `Welcome to Onyx Royal server. Please choose one of the options below for more information.`
+          )
+          .setColor(0x5865F2)
+          .setTimestamp();
+
+        const select = new StringSelectMenuBuilder()
+          .setCustomId('info_menu')
+          .setPlaceholder('Choose the required information...')
+          .addOptions(
+            new StringSelectMenuOptionBuilder()
+              .setLabel('Rules & Getting Started')
+              .setDescription('View rules and the starting channel')
+              .setValue('rules')
+              .setEmoji('📜'),
+            new StringSelectMenuOptionBuilder()
+              .setLabel('Details & Information')
+              .setDescription('Everything you need to know about the server')
+              .setValue('info')
+              .setEmoji('ℹ️'),
+            new StringSelectMenuOptionBuilder()
+              .setLabel('Technical Support')
+              .setDescription('How to contact management')
+              .setValue('support')
+              .setEmoji('🎫')
+          );
+
+        const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
+
+        await channel.send({
+          embeds: [embed],
+          components: [row]
+        });
+
+        await interaction.reply({ content: "Panel sent successfully.", ephemeral: true });
+      }
+    } else if (interaction.isStringSelectMenu()) {
+      if (interaction.customId === 'info_menu') {
+        const value = interaction.values[0];
+        let response = "";
+
+        if (value === 'rules') {
+          response = "First, please head to [ <#1334969013935280250> ] to read the rules.";
+        } else if (value === 'info') {
+          response = "This channel is the official and primary reference for every member, containing all important details — please head to [ <#1333217321904377906> ]";
+        } else if (value === 'support') {
+          response = "Technical support is dedicated to Onyx Royal server only, and for inquiries related to problems or complaints please head to [ <#1439390030500991108> ]";
+        }
+
+        await interaction.reply({ content: response, ephemeral: true });
+      } else if (interaction.customId === 'role_menu') {
+        const roleId = interaction.values[0];
+        const role = interaction.guild?.roles.cache.get(roleId);
+        
+        if (!role) {
+          return interaction.reply({ content: "The role does not exist.", ephemeral: true });
+        }
+
+        try {
+          if (interaction.member?.roles.cache.has(roleId)) {
+            await interaction.member.roles.remove(roleId);
+            await interaction.reply({ content: `Successfully removed the **${role.name}** role from you.`, ephemeral: true });
+          } else {
+            await interaction.member.roles.add(roleId);
+            await interaction.reply({ content: `Successfully gave you the **${role.name}** role.`, ephemeral: true });
+          }
+        } catch (err) {
+          console.error("Failed to update role:", err);
+          await interaction.reply({ content: "Failed to update role. Please ensure the bot has proper permissions.", ephemeral: true });
+        }
+      }
+    }
+  });
+
+  client.on(Events.GuildMemberAdd, async (member : any) => {
+    const config = await storage.getGuildConfig(member.guild.id);
+    const welcomeChannelId = config?.welcomeChannelId;
+    
+    const guild = member.guild;
+    const oldInvites = invitesCache.get(guild.id);
+
+    console.log(`[Join] Member ${member.user.tag} (${member.id}) joined ${guild.name}`);
+
+    let usedInvite: any = null;
+    try {
+      // Check if bot has permission to fetch invites
+      const botMember = await guild.members.fetchMe();
+      if (!botMember.permissions.has("ManageGuild")) {
+        console.warn(`[Join] Bot lacks 'Manage Guild' permission in ${guild.name}. Cannot track standard invites accurately.`);
+      }
+
+      const newInvites = await guild.invites.fetch();
+      const newCodeUses = new Collection<string, number>();
+      newInvites.forEach((inv: any) => newCodeUses.set(inv.code, inv.uses || 0));
+      
+      if (oldInvites) {
+        usedInvite = newInvites.find((inv: any) => {
+          const oldUses = oldInvites.get(inv.code) || 0;
+          return (inv.uses || 0) > oldUses;
+        });
+
+        if (usedInvite) {
+          console.log(`[Join] Found used invite: ${usedInvite.code} by ${usedInvite.inviter?.tag || 'Unknown'}`);
+        }
+      } else {
+        console.warn(`[Join] No old invites in cache for ${guild.name}. Initializing cache now.`);
+      }
+      
+      // Update cache
+      (newCodeUses as any).vanityUses = (oldInvites as any)?.vanityUses || 0;
+      invitesCache.set(guild.id, newCodeUses);
+    } catch (err) {
+      console.error("[Join] Error tracking invite:", err);
+    }
+
+    let inviterId: string | null = null;
+    let inviterUsername: string | null = null;
+    let inviteCode = usedInvite?.code || null;
+
+    if (usedInvite) {
+      if (usedInvite.inviter) {
+        inviterId = usedInvite.inviter.id;
+        inviterUsername = usedInvite.inviter.username;
+      } else {
+        inviterUsername = "Unknown member";
+      }
+    }
+
+    if (guild.vanityURLCode) {
+      // Try to verify vanity uses, but handle potential 2FA/Permission errors
+      try {
+        const vanityData = await guild.fetchVanityData();
+        const cache = invitesCache.get(guild.id);
+        const oldVanityUses = (cache as any)?.vanityUses || 0;
+        
+        if (vanityData.uses > oldVanityUses) {
+          inviteCode = guild.vanityURLCode;
+          inviterUsername = "Public invite";
+          console.log(`[Join] Detected public invite join: ${inviteCode}`);
+        } else {
+          // If uses didn't increase, it might be a direct join or an edge case
+          // However, if we're here and no other invite was found, it's often still the vanity
+          inviterUsername = "Unknown member";
+        }
+        
+        if (cache) {
+          (cache as any).vanityUses = vanityData.uses;
+        }
+      } catch (err: any) {
+        // Fallback for 2FA error (code 60003) or Missing Access
+        if (err.code === 60003 || err.code === 50001) {
+          console.log(`[Join] Vanity fetch failed (${err.code}), assuming vanity join since no other invite was used.`);
+          inviteCode = guild.vanityURLCode;
+          inviterUsername = "Public invite";
+        } else {
+          console.error("[Join] Unexpected error checking vanity URL:", err);
+          inviterUsername = "Unknown member";
+        }
+      }
+    } else {
+      inviterUsername = "Unknown member";
+    }
+
+    if (!inviterUsername && !inviteCode) {
+      inviterUsername = "Unknown member";
+    }
+
+    // Log to database
+    try {
+      await storage.logJoin({
+        discordUserId: member.id,
+        discordUsername: member.user.username,
+        discordAvatarUrl: member.user.displayAvatarURL({ extension: 'png', size: 128 }),
+        inviterId: inviterId,
+        inviterUsername: inviterUsername,
+        inviteCode: inviteCode || (inviterUsername === "Public invite" ? guild.vanityURLCode : null)
+      });
+      console.log(`[Join] Logged join for ${member.user.username} (Inviter: ${inviterUsername})`);
+    } catch (dbErr) {
+      console.error("[Join] Failed to log to database:", dbErr);
+    }
+
+    if (welcomeChannelId) {
+      const welcomeChannel = member.guild.channels.cache.get(welcomeChannelId);
+      if (welcomeChannel?.isTextBased()) {
+        const welcomeMessage =
+          `<:discotoolsxyzicon20260216T223945:1473252270614384682> <@${member.id}>, Welcome!\n\n` +
+          `<:discotoolsxyzicon20260216T223959:1473099778706374686> Welcome to "<:emoji_202:1473114510025031700> Onyx Royal" server\n` +
+          `First, please head to [ <#1334969013935280250> ]\n\n` +
+          `<:discotoolsxyzicon20260216T224034:1473099163771342939> This channel is the official and primary reference for every member,\n` +
+          `containing all important details — please head to [ <#1333217321904377906> ]\n\n` +
+          `<:discotoolsxyzicon20260216T223913:1473252885608534076> Technical support is dedicated to Onyx Royal server only,\n` +
+          `and for inquiries related to problems or complaints please head to [ <#1439390030500991108> ]\n\n`;
+
+        // Generate welcome embed and dropdown
+        try {
+          // const welcomeEmbed = new EmbedBuilder()
+          //   .setTitle('Welcome to Onyx Royal')
+          //   .setDescription(welcomeMessage)
+          //   .setColor(0x5865F2)
+          //   .setThumbnail(member.user.displayAvatarURL())
+          //   .setTimestamp();
+
+          // const welcomeSelect = new StringSelectMenuBuilder()
+          //   .setCustomId('info_menu')
+          //   .setPlaceholder('Choose the required information...')
+          //   .addOptions(
+          //     new StringSelectMenuOptionBuilder()
+          //       .setLabel('Rules & Getting Started')
+          //       .setDescription('View rules and the starting channel')
+          //       .setValue('rules')
+          //       .setEmoji('📜'),
+          //     new StringSelectMenuOptionBuilder()
+          //       .setLabel('Details & Information')
+          //       .setDescription('Everything you need to know about the server')
+          //       .setValue('info')
+          //       .setEmoji('ℹ️'),
+          //     new StringSelectMenuOptionBuilder()
+          //       .setLabel('Technical Support')
+          //       .setDescription('How to contact management')
+          //       .setValue('support')
+          //       .setEmoji('🎫')
+          //   );
+
+          // const welcomeRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(welcomeSelect);
+
+          // (welcomeChannel as any).send({
+          //   embeds: [welcomeEmbed],
+          //   components: [welcomeRow]
+          // }).catch(console.error);
+          (welcomeChannel as any).send({
+            content: welcomeMessage
+          }).catch(console.error)
+        } catch (err) {
+          console.error("Failed to send welcome interaction:", err);
+          (welcomeChannel as any).send({
+            content: welcomeMessage
+          }).catch(console.error);
+        }
+      }
+    }
+
+    /* Auto-role assignment disabled by request
+    try {
+      const botRoleId = "1439329655793385675";
+      const memberRoleId = "1333225938854477826";
+      const roleId = member.user.bot ? botRoleId : memberRoleId;
+
+      const role = member.guild.roles.cache.get(roleId);
+      if (role) {
+        await member.roles.add(role);
+        console.log(`Assigned role ${role.name} to ${member.user.username}`);
+      }
+
+      // Also check if there's a custom auto-role set via command
+      if (config?.autoRoleId && config.autoRoleId !== roleId) {
+        const customRole = member.guild.roles.cache.get(config.autoRoleId);
+        if (customRole) {
+          await member.roles.add(customRole);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to assign auto-role:", err);
+    }
+    */
+  });
+
+  client.on(Events.InviteCreate, (invite) => {
+    const guildInvites = invitesCache.get(invite.guild?.id || "");
+    if (guildInvites) {
+      guildInvites.set(invite.code, invite.uses || 0);
+    }
+  });
+
+  await client.login(process.env.DISCORD_TOKEN);
+  return client;
+}
+
+export let discordClient: Client | null = null;
+
+export async function initBot() {
+  discordClient = await startBot() as any;
+  return discordClient;
+}
+
+export async function sendPanel(data: any) {
+  if (!discordClient) throw new Error("Bot not initialized");
+
+  const { channelId, title, description, color, thumbnail, options } = data;
+  const channel = await discordClient.channels.fetch(channelId);
+  
+  if (!channel || !channel.isTextBased()) {
+    throw new Error("Channel not found or not text-based");
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description)
+    .setColor(parseInt(color.replace("#", "0x")) || 0x5865F2)
+    .setTimestamp();
+
+  if (thumbnail) {
+    embed.setThumbnail(thumbnail);
+  }
+
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('role_menu')
+    .setPlaceholder('Choose your role...')
+    .addOptions(
+      options.map((opt: any) => 
+        new StringSelectMenuOptionBuilder()
+          .setLabel(opt.label)
+          .setDescription(opt.description || "")
+          .setValue(opt.roleId)
+          .setEmoji(opt.emoji || "🏷️")
+      )
+    );
+
+  const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
+
+  await (channel as any).send({
+    embeds: [embed],
+    components: [row]
+  });
+}

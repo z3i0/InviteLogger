@@ -1,0 +1,86 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Base HSL values for customization */
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Discord-inspired Palette (Dark Mode Default) */
+  --background: 223 7% 20%;      /* #313338 - Main bg */
+  --foreground: 210 10% 98%;     /* Whiteish text */
+  
+  --card: 220 7% 17%;            /* #2b2d31 - Card bg */
+  --card-foreground: 210 10% 98%;
+
+  --popover: 220 7% 17%;
+  --popover-foreground: 210 10% 98%;
+
+  --primary: 235 86% 65%;        /* #5865F2 - Blurple */
+  --primary-foreground: 210 40% 98%;
+
+  --secondary: 223 7% 15%;       /* Darker distinct sections */
+  --secondary-foreground: 210 40% 98%;
+
+  --muted: 223 7% 20%;
+  --muted-foreground: 215 8% 65%; /* Subtext gray */
+
+  --accent: 235 86% 65%;
+  --accent-foreground: 210 40% 98%;
+
+  --destructive: 359 87% 60%;    /* Red for errors/bans */
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 223 7% 12%;          /* Dark borders */
+  --input: 223 7% 12%;
+  --ring: 235 86% 65%;
+
+  --radius: 0.5rem;
+  
+  /* Status Colors */
+  --success: 145 65% 39%;
+  --warning: 45 93% 47%;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold tracking-tight;
+  }
+}
+
+/* Custom Scrollbar for that Discord feel */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-[#2b2d31];
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-[#1a1b1e] rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-primary/50;
+}
+
+/* Utilities for glass effects and animations */
+@layer utilities {
+  .glass-panel {
+    @apply bg-card/95 backdrop-blur-sm border border-white/5 shadow-xl;
+  }
+  
+  .text-glow {
+    text-shadow: 0 0 20px rgba(88, 101, 242, 0.5);
+  }
+}
