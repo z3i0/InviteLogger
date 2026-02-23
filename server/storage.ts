@@ -8,6 +8,7 @@ export interface IStorage {
   getLeaderboard(): Promise<LeaderboardEntry[]>;
   getGuildConfig(guildId: string): Promise<GuildConfig | undefined>;
   setGuildConfig(config: InsertGuildConfig): Promise<GuildConfig>;
+  getInvitesByInviter(inviterId: string): Promise<JoinLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -32,7 +33,7 @@ export class DatabaseStorage implements IStorage {
       .groupBy(joinLogs.inviterId, joinLogs.inviterUsername)
       .orderBy(desc(sql`count(*)`))
       .limit(10);
-    
+
     return results as LeaderboardEntry[];
   }
 
@@ -52,6 +53,14 @@ export class DatabaseStorage implements IStorage {
     }
     const [inserted] = await db.insert(guildConfig).values(config).returning();
     return inserted;
+  }
+
+  async getInvitesByInviter(inviterId: string): Promise<JoinLog[]> {
+    return await db
+      .select()
+      .from(joinLogs)
+      .where(eq(joinLogs.inviterId, inviterId))
+      .orderBy(desc(joinLogs.joinedAt));
   }
 }
 

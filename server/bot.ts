@@ -62,7 +62,7 @@ export async function startBot() {
     ]
   });
 
-  client.once(Events.ClientReady, async (c : any) => {
+  client.once(Events.ClientReady, async (c: any) => {
     console.log(`Ready! Logged in as ${c.user.tag}`);
 
     // Set default welcome channel if not set
@@ -135,6 +135,18 @@ export async function startBot() {
           },
         ],
       },
+      {
+        name: 'search-invites',
+        description: 'Search for members invited by a specific user',
+        options: [
+          {
+            name: 'user',
+            type: ApplicationCommandOptionType.User,
+            description: 'The user to search for',
+            required: true,
+          },
+        ],
+      },
     ];
 
     await client.application?.commands.set(data);
@@ -143,14 +155,14 @@ export async function startBot() {
       try {
         const invites = await guild.invites.fetch();
         const codeUses = new Collection<string, number>();
-        invites.forEach((inv : any) => codeUses.set(inv.code, inv.uses || 0));
-        
+        invites.forEach((inv: any) => codeUses.set(inv.code, inv.uses || 0));
+
         // Add vanity uses to the collection as a custom property
         if (guild.vanityURLCode) {
           try {
             const vanityData = await guild.fetchVanityData();
             (codeUses as any).vanityUses = vanityData.uses;
-          } catch (e) {}
+          } catch (e) { }
         }
 
         invitesCache.set(guild.id, codeUses);
@@ -161,7 +173,7 @@ export async function startBot() {
     }
   });
 
-  client.on(Events.InteractionCreate, async (interaction : any) => {
+  client.on(Events.InteractionCreate, async (interaction: any) => {
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'set-welcome') {
         if (!interaction.memberPermissions?.has("Administrator")) {
@@ -262,6 +274,39 @@ export async function startBot() {
 
         await interaction.reply({ content: "Panel sent successfully.", ephemeral: true });
       }
+
+      if (interaction.commandName === 'search-invites') {
+        const targetUser = interaction.options.getUser('user');
+        if (!targetUser) return interaction.reply({ content: "User not found.", ephemeral: true });
+
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+          const invitedMembers = await storage.getInvitesByInviter(targetUser.id);
+
+          if (invitedMembers.length === 0) {
+            return interaction.editReply({ content: `No members found invited by **${targetUser.username}**.` });
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle(`Members invited by ${targetUser.username}`)
+            .setColor(0x5865F2)
+            .setThumbnail(targetUser.displayAvatarURL())
+            .setDescription(
+              invitedMembers
+                .slice(0, 20) // Limit to top 20 for readability
+                .map((log, index) => `${index + 1}. **${log.discordUsername}** (<@${log.discordUserId}>) - <t:${Math.floor(log.joinedAt!.getTime() / 1000)}:R>`)
+                .join('\n') + (invitedMembers.length > 20 ? `\n\n*...and ${invitedMembers.length - 20} more members.*` : '')
+            )
+            .setFooter({ text: `Total Invites: ${invitedMembers.length}` })
+            .setTimestamp();
+
+          await interaction.editReply({ embeds: [embed] });
+        } catch (err) {
+          console.error("Search error:", err);
+          await interaction.editReply({ content: "An error occurred while searching for invites." });
+        }
+      }
     } else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'info_menu') {
         const value = interaction.values[0];
@@ -279,7 +324,7 @@ export async function startBot() {
       } else if (interaction.customId === 'role_menu') {
         const roleId = interaction.values[0];
         const role = interaction.guild?.roles.cache.get(roleId);
-        
+
         if (!role) {
           return interaction.reply({ content: "The role does not exist.", ephemeral: true });
         }
@@ -300,10 +345,10 @@ export async function startBot() {
     }
   });
 
-  client.on(Events.GuildMemberAdd, async (member : any) => {
+  client.on(Events.GuildMemberAdd, async (member: any) => {
     const config = await storage.getGuildConfig(member.guild.id);
     const welcomeChannelId = config?.welcomeChannelId;
-    
+
     const guild = member.guild;
     const oldInvites = invitesCache.get(guild.id);
 
@@ -320,7 +365,7 @@ export async function startBot() {
       const newInvites = await guild.invites.fetch();
       const newCodeUses = new Collection<string, number>();
       newInvites.forEach((inv: any) => newCodeUses.set(inv.code, inv.uses || 0));
-      
+
       if (oldInvites) {
         usedInvite = newInvites.find((inv: any) => {
           const oldUses = oldInvites.get(inv.code) || 0;
@@ -333,7 +378,7 @@ export async function startBot() {
       } else {
         console.warn(`[Join] No old invites in cache for ${guild.name}. Initializing cache now.`);
       }
-      
+
       // Update cache
       (newCodeUses as any).vanityUses = (oldInvites as any)?.vanityUses || 0;
       invitesCache.set(guild.id, newCodeUses);
@@ -350,46 +395,27 @@ export async function startBot() {
         inviterId = usedInvite.inviter.id;
         inviterUsername = usedInvite.inviter.username;
       } else {
-        inviterUsername = "Unknown member";
+        inviterUsername = "Unknown member (Invite cached but inviter empty)";
       }
-    }
-
-    if (guild.vanityURLCode) {
-      // Try to verify vanity uses, but handle potential 2FA/Permission errors
+    } else if (guild.vanityURLCode) {
       try {
         const vanityData = await guild.fetchVanityData();
         const cache = invitesCache.get(guild.id);
         const oldVanityUses = (cache as any)?.vanityUses || 0;
-        
+
         if (vanityData.uses > oldVanityUses) {
           inviteCode = guild.vanityURLCode;
           inviterUsername = "Public invite";
-          console.log(`[Join] Detected public invite join: ${inviteCode}`);
-        } else {
-          // If uses didn't increase, it might be a direct join or an edge case
-          // However, if we're here and no other invite was found, it's often still the vanity
-          inviterUsername = "Unknown member";
+          if (cache) (cache as any).vanityUses = vanityData.uses;
         }
-        
-        if (cache) {
-          (cache as any).vanityUses = vanityData.uses;
-        }
-      } catch (err: any) {
-        // Fallback for 2FA error (code 60003) or Missing Access
-        if (err.code === 60003 || err.code === 50001) {
-          console.log(`[Join] Vanity fetch failed (${err.code}), assuming vanity join since no other invite was used.`);
-          inviteCode = guild.vanityURLCode;
-          inviterUsername = "Public invite";
-        } else {
-          console.error("[Join] Unexpected error checking vanity URL:", err);
-          inviterUsername = "Unknown member";
-        }
+      } catch (err) {
+        // Fallback for vanity error
+        inviterUsername = "Unknown member (Vanity check failed)";
       }
-    } else {
-      inviterUsername = "Unknown member";
     }
 
-    if (!inviterUsername && !inviteCode) {
+    // If still unknown, try a final fallback
+    if (!inviterUsername) {
       inviterUsername = "Unknown member";
     }
 
@@ -516,7 +542,7 @@ export async function sendPanel(data: any) {
 
   const { channelId, title, description, color, thumbnail, options } = data;
   const channel = await discordClient.channels.fetch(channelId);
-  
+
   if (!channel || !channel.isTextBased()) {
     throw new Error("Channel not found or not text-based");
   }
@@ -535,7 +561,7 @@ export async function sendPanel(data: any) {
     .setCustomId('role_menu')
     .setPlaceholder('Choose your role...')
     .addOptions(
-      options.map((opt: any) => 
+      options.map((opt: any) =>
         new StringSelectMenuOptionBuilder()
           .setLabel(opt.label)
           .setDescription(opt.description || "")
