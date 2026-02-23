@@ -66,19 +66,7 @@ export async function startBot() {
   client.once(Events.ClientReady, async (c: any) => {
     console.log(`Ready! Logged in as ${c.user.tag}`);
 
-    // Set default welcome channel if not set
-    const defaultWelcomeChannelId = "1333217333300170763";
-    for (const guild of c.guilds.cache.values()) {
-      const config = await storage.getGuildConfig(guild.id);
-      if (!config || !config.welcomeChannelId) {
-        await storage.setGuildConfig({
-          guildId: guild.id,
-          welcomeChannelId: defaultWelcomeChannelId,
-          language: 'ar'
-        });
-        console.log(`Set default welcome channel ${defaultWelcomeChannelId} for guild ${guild.name}`);
-      }
-    }
+    console.log(`Ready! Logged in as ${c.user.tag}`);
 
     // Register slash commands
     const data = [
@@ -151,27 +139,6 @@ export async function startBot() {
     ];
 
     await client.application?.commands.set(data as any);
-
-    for (const guild of c.guilds.cache.values()) {
-      try {
-        const invites = await guild.invites.fetch();
-        const codeUses = new Collection<string, number>();
-        invites.forEach((inv: any) => codeUses.set(inv.code, inv.uses || 0));
-
-        // Add vanity uses to the collection as a custom property
-        if (guild.vanityURLCode) {
-          try {
-            const vanityData = await guild.fetchVanityData();
-            (codeUses as any).vanityUses = vanityData.uses;
-          } catch (e) { }
-        }
-
-        invitesCache.set(guild.id, codeUses);
-        console.log(`Cached ${invites.size} invites for guild ${guild.name}`);
-      } catch (err) {
-        console.error(`Failed to cache invites for ${guild.name}:`, err);
-      }
-    }
   });
 
   client.on(Events.InteractionCreate, async (interaction: any) => {
