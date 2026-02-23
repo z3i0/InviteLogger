@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits, Events, Collection, EmbedBuilder, ActionRowB
 import { storage } from './storage';
 import { createCanvas, loadImage, registerFont } from 'canvas';
 import path from 'path';
+import { any } from 'zod';
 
 const invitesCache = new Map<string, Collection<string, number>>();
 
@@ -149,7 +150,7 @@ export async function startBot() {
       },
     ];
 
-    await client.application?.commands.set(data);
+    await client.application?.commands.set(data as any);
 
     for (const guild of c.guilds.cache.values()) {
       try {
@@ -438,13 +439,9 @@ export async function startBot() {
       const welcomeChannel = member.guild.channels.cache.get(welcomeChannelId);
       if (welcomeChannel?.isTextBased()) {
         const welcomeMessage =
-          `<:discotoolsxyzicon20260216T223945:1473252270614384682> <@${member.id}>, Welcome!\n\n` +
-          `<:discotoolsxyzicon20260216T223959:1473099778706374686> Welcome to "<:emoji_202:1473114510025031700> Onyx Royal" server\n` +
-          `First, please head to [ <#1334969013935280250> ]\n\n` +
-          `<:discotoolsxyzicon20260216T224034:1473099163771342939> This channel is the official and primary reference for every member,\n` +
-          `containing all important details — please head to [ <#1333217321904377906> ]\n\n` +
-          `<:discotoolsxyzicon20260216T223913:1473252885608534076> Technical support is dedicated to Onyx Royal server only,\n` +
-          `and for inquiries related to problems or complaints please head to [ <#1439390030500991108> ]\n\n`;
+          `أهلاً بك <@${member.id}> في Onyx Royal <:11OnyxRoyal:1473114510025031700> ، يرجى البدء بمراجعة أقسام الـ <#1334969013935280250>  , <#1333217321904377906> \n` +
+          `كمرجعك الأساسي لكل التفاصيل\n` +
+          `وفي حال واجهت أي مشكلة أو كان لديك استفسار، يرجى التوجه مباشرة لقسم الـ <#1439390030500991108> .`;
 
         // Generate welcome embed and dropdown
         try {
