@@ -519,6 +519,32 @@ export async function startBot() {
     */
   });
 
+  client.on(Events.MessageCreate, async (message: any) => {
+    if (message.author.bot) return;
+
+    // Specific channel ID for auto-thread and autoline
+    if (message.channelId === '1333217335749771356') {
+      try {
+        // Create a public thread from the message
+        const thread = await message.startThread({
+          name: `ثريد - ${message.author.username}`,
+          autoArchiveDuration: 60, // 1 hour
+        });
+
+        // Autoline image URL (Separator)
+        const autolineUrl = "https://cdn.discordapp.com/attachments/1117462057999142982/1117462058250805348/standard.gif";
+
+        await thread.send({
+          content: autolineUrl
+        });
+
+        console.log(`Auto-thread created for ${message.author.tag} in ${message.channelId}`);
+      } catch (err) {
+        console.error("Failed to create auto-thread or send autoline:", err);
+      }
+    }
+  });
+
   client.on(Events.InviteCreate, (invite) => {
     const guildInvites = invitesCache.get(invite.guild?.id || "");
     if (guildInvites) {
