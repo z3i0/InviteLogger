@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits, Events, Collection, EmbedBuilder, ActionRowB
 import { storage } from './storage';
 import { createCanvas, loadImage, registerFont } from 'canvas';
 import path from 'path';
+import { any } from 'zod';
 
 const invitesCache = new Map<string, Collection<string, number>>();
 
@@ -65,19 +66,7 @@ export async function startBot() {
   client.once(Events.ClientReady, async (c: any) => {
     console.log(`Ready! Logged in as ${c.user.tag}`);
 
-    // Set default welcome channel if not set
-    const defaultWelcomeChannelId = "1333217333300170763";
-    for (const guild of c.guilds.cache.values()) {
-      const config = await storage.getGuildConfig(guild.id);
-      if (!config || !config.welcomeChannelId) {
-        await storage.setGuildConfig({
-          guildId: guild.id,
-          welcomeChannelId: defaultWelcomeChannelId,
-          language: 'ar'
-        });
-        console.log(`Set default welcome channel ${defaultWelcomeChannelId} for guild ${guild.name}`);
-      }
-    }
+    console.log(`Ready! Logged in as ${c.user.tag}`);
 
     // Register slash commands
     const data = [
@@ -149,28 +138,7 @@ export async function startBot() {
       },
     ];
 
-    await client.application?.commands.set(data);
-
-    for (const guild of c.guilds.cache.values()) {
-      try {
-        const invites = await guild.invites.fetch();
-        const codeUses = new Collection<string, number>();
-        invites.forEach((inv: any) => codeUses.set(inv.code, inv.uses || 0));
-
-        // Add vanity uses to the collection as a custom property
-        if (guild.vanityURLCode) {
-          try {
-            const vanityData = await guild.fetchVanityData();
-            (codeUses as any).vanityUses = vanityData.uses;
-          } catch (e) { }
-        }
-
-        invitesCache.set(guild.id, codeUses);
-        console.log(`Cached ${invites.size} invites for guild ${guild.name}`);
-      } catch (err) {
-        console.error(`Failed to cache invites for ${guild.name}:`, err);
-      }
-    }
+    await client.application?.commands.set(data as any);
   });
 
   client.on(Events.InteractionCreate, async (interaction: any) => {
@@ -438,13 +406,9 @@ export async function startBot() {
       const welcomeChannel = member.guild.channels.cache.get(welcomeChannelId);
       if (welcomeChannel?.isTextBased()) {
         const welcomeMessage =
-          `<:discotoolsxyzicon20260216T223945:1473252270614384682> <@${member.id}>, Welcome!\n\n` +
-          `<:discotoolsxyzicon20260216T223959:1473099778706374686> Welcome to "<:emoji_202:1473114510025031700> Onyx Royal" server\n` +
-          `First, please head to [ <#1334969013935280250> ]\n\n` +
-          `<:discotoolsxyzicon20260216T224034:1473099163771342939> This channel is the official and primary reference for every member,\n` +
-          `containing all important details — please head to [ <#1333217321904377906> ]\n\n` +
-          `<:discotoolsxyzicon20260216T223913:1473252885608534076> Technical support is dedicated to Onyx Royal server only,\n` +
-          `and for inquiries related to problems or complaints please head to [ <#1439390030500991108> ]\n\n`;
+          `أهلاً بك <@${member.id}> في Onyx Royal <:11OnyxRoyal:1473114510025031700> ، يرجى البدء بمراجعة أقسام الـ <#1334969013935280250>  , <#1333217321904377906> \n` +
+          `كمرجعك الأساسي لكل التفاصيل\n` +
+          `وفي حال واجهت أي مشكلة أو كان لديك استفسار، يرجى التوجه مباشرة لقسم الـ <#1439390030500991108> .`;
 
         // Generate welcome embed and dropdown
         try {
