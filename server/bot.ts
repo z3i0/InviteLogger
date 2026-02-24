@@ -496,7 +496,7 @@ export async function startBot() {
         });
 
         // Autoline image URL (Separator)
-        const autolineUrl = "https://cdn.discordapp.com/attachments/1117462057999142982/1117462058250805348/standard.gif";
+        const autolineUrl = "https://cdn.discordapp.com/attachments/1439260824945299467/1475874119785381959/Onyx-Line.png?ex=699f1262&is=699dc0e2&hm=70bd6f64d53d6049c4eaaa6d9e525443e15f434776178e0c8346f243e2859067&";
 
         await thread.send({
           content: autolineUrl
