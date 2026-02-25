@@ -523,15 +523,18 @@ export async function startBot() {
       try {
         // Create a public thread from the message
         const thread = await message.startThread({
-          name: `ثريد - ${message.author.username}`,
+          name: `thread - ${message.author.username}`,
           autoArchiveDuration: 60, // 1 hour
         });
 
-        // Autoline image URL (Separator)
-        const autolineUrl = "https://cdn.discordapp.com/attachments/1439260824945299467/1475874119785381959/Onyx-Line.png?ex=69a063e2&is=699f1262&hm=99cbae1dcab0641b0182a8cae20b019e81b7f6d9f08557295c8d8dc95febc052&animated=true";
+        // Autoline image URL (parator) from user request
+        const autolineUrl = "https://cdn.discordapp.com/attachments/1439260824945299467/1475874119785381959/Onyx-Line.png?ex=69a063e2&is=699f1262&hm=99cbae1dcab0641b0182a8cae20b019e81b7f6d9f08557295c8d8dc95febc052&";
+
+        // Send the line as an attachment for a cleaner look
+        const attachment = new AttachmentBuilder(autolineUrl, { name: 'Onyx-Line.png' });
 
         await thread.send({
-          content: autolineUrl
+          files: [attachment]
         });
 
         console.log(`Auto-thread created for ${message.author.tag} in ${message.channelId}`);
